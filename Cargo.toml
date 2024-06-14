@@ -9,6 +9,7 @@ edition = "2021"
 async-trait = "0.1.80"
 clap = { version = "4.5.7", features = ["derive"] }
 color-eyre = "0.6.3"
+crossterm = "0.27.0"
 russh = { version = "0.43.0", features = ["openssl"] }
 russh-keys = { version = "0.43.0", features = ["openssl"] }
 tokio = { version = "1.38.0", features = ["full"] }

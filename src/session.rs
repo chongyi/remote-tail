@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc, time::Duration};
 use color_eyre::Result;
 use russh::{client, ChannelMsg, Disconnect};
 use russh_keys::{key, load_secret_key};
-use tokio::{io::AsyncWriteExt, net::ToSocketAddrs};
+use tokio::{io::AsyncWriteExt, net::ToSocketAddrs, sync::mpsc};
 
 struct Client {}
 
@@ -22,11 +22,13 @@ impl client::Handler for Client {
 }
 
 pub struct Session {
+    id: String,
     session: client::Handle<Client>,
 }
 
 impl Session {
-    async fn connect<P: AsRef<Path>, A: ToSocketAddrs>(
+    pub async fn connect<P: AsRef<Path>, A: ToSocketAddrs>(
+        id: String,
         key_path: P,
         user: impl Into<String>,
         addrs: A,
@@ -49,15 +51,18 @@ impl Session {
             color_eyre::eyre::bail!("Authentication failed");
         }
 
-        Ok(Self { session })
+        Ok(Self { session, id })
     }
 
-    async fn call(&mut self, command: &str) -> Result<u32> {
+    pub async fn call(
+        &mut self,
+        command: &str,
+        tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
+    ) -> Result<u32> {
         let mut channel = self.session.channel_open_session().await?;
         channel.exec(true, command).await?;
 
         let mut code = None;
-        let mut stdout = tokio::io::stdout();
 
         loop {
             // There's an event available on the session channel
@@ -67,8 +72,7 @@ impl Session {
             match msg {
                 // Write data to the terminal
                 ChannelMsg::Data { ref data } => {
-                    stdout.write_all(data).await?;
-                    stdout.flush().await?;
+                    tx.send((self.id.clone(), data.to_vec()))?;
                 }
                 // The command has returned an exit code
                 ChannelMsg::ExitStatus { exit_status } => {
