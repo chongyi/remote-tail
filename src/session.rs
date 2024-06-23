@@ -5,6 +5,8 @@ use russh::{client, ChannelMsg, Disconnect};
 use russh_keys::{key, load_secret_key};
 use tokio::{io::AsyncWriteExt, net::ToSocketAddrs, sync::mpsc};
 
+use crate::Msg;
+
 struct Client {}
 
 #[async_trait::async_trait]
@@ -54,11 +56,7 @@ impl Session {
         Ok(Self { session, id })
     }
 
-    pub async fn call(
-        &mut self,
-        command: &str,
-        tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
-    ) -> Result<u32> {
+    pub async fn call(&mut self, command: &str, tx: mpsc::UnboundedSender<Msg>) -> Result<u32> {
         let mut channel = self.session.channel_open_session().await?;
         channel.exec(true, command).await?;
 
@@ -72,7 +70,7 @@ impl Session {
             match msg {
                 // Write data to the terminal
                 ChannelMsg::Data { ref data } => {
-                    tx.send((self.id.clone(), data.to_vec()))?;
+                    tx.send(Msg::Message((self.id.clone(), data.to_vec())))?;
                 }
                 // The command has returned an exit code
                 ChannelMsg::ExitStatus { exit_status } => {
@@ -82,6 +80,8 @@ impl Session {
                 _ => {}
             }
         }
+
+        let _ = tx.send(Msg::Exit);
         Ok(code.expect("program did not exit cleanly"))
     }
 

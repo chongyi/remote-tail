@@ -13,8 +13,15 @@ struct Cli {
     identity_file: Option<PathBuf>,
     #[arg(short, long)]
     servers: Vec<String>,
+    #[arg(short = 'n', long)]
+    lines: Option<usize>,
     #[arg(short, long)]
     files: Vec<PathBuf>,
+}
+
+pub enum Msg {
+    Message((String, Vec<u8>)),
+    Exit,
 }
 
 #[tokio::main]
@@ -50,7 +57,12 @@ async fn main() -> Result<()> {
                 .await
             {
                 Ok(mut session) => {
-                    session.call(&format!("tail -f {}", files), tx).await;
+                    let _ = session
+                        .call(
+                            &format!("tail -n {} -f {}", cli.lines.unwrap_or(10), files),
+                            tx,
+                        )
+                        .await;
                 }
                 Err(err) => eprintln!("Failed to connect to {}: {}", host, err),
             }
@@ -58,8 +70,10 @@ async fn main() -> Result<()> {
     }
 
     loop {
-        if let Some((id, data)) = rx.recv().await {
+        if let Some(Msg::Message((id, data))) = rx.recv().await {
             print!("[{}] --> {}", id.green(), String::from_utf8_lossy(&data));
+        } else {
+            break;
         }
     }
 
